@@ -89,7 +89,7 @@ def match_filters(banner, filters):
     for args in filters:
         flat_field, check = args.split(':', 1)
         value = get_banner_field(banner, flat_field)
-        
+
         # If the field doesn't exist on the banner then ignore the record
         if not value:
             return False
@@ -136,7 +136,7 @@ def convert(input, format):
 
     # Open the output file
     fout = open(filename, 'w')
-    
+
     # Start a spinner
     finished_event = threading.Event()
     progress_bar_thread = threading.Thread(target=async_spinner, args=(finished_event,))
@@ -148,7 +148,7 @@ def convert(input, format):
         'csv': CsvConverter,
         'geo.json': GeoJsonConverter,
     }.get(format)(fout)
-    
+
     converter.process([input])
 
     finished_event.set()
@@ -221,7 +221,7 @@ def alert_create(name, netblock):
         alert = api.create_alert(name, netblock)
     except shodan.APIError as e:
         raise click.ClickException(e.value)
-    
+
     click.echo(click.style('Successfully created network alert!', fg='green'))
     click.echo(click.style('Alert ID: {}'.format(alert['id']), fg='cyan'))
 
@@ -301,7 +301,8 @@ def count(query):
 @click.option('--limit', help='The number of results you want to download. -1 to download all the data possible.', default=1000, type=int)
 @click.argument('filename', metavar='<filename>')
 @click.argument('query', metavar='<search query>', nargs=-1)
-def download(limit, filename, query):
+@click.option('--tty', help='Is the process connected to a terminal? False disables the click progress bar.', default=True, type=bool)
+def download(limit, filename, query, tty):
     """Download search results and save them in a compressed JSON file."""
     key = get_api_key()
 
@@ -346,10 +347,23 @@ def download(limit, filename, query):
         count = 0
         try:
             cursor = api.search_cursor(query, minify=False)
-            with click.progressbar(cursor, length=limit) as bar:
-                for banner in bar:
+            if tty == True:
+	            with click.progressbar(cursor, length=limit) as bar:
+	                for banner in bar:
+	                    helpers.write_banner(fout, banner)
+	                    count += 1
+
+	                    if count >= limit:
+	                        break
+            else:
+                current = 0.0
+                for banner in cursor:
                     helpers.write_banner(fout, banner)
                     count += 1
+
+                    current = count / float(limit) * 100
+                    if current % 10 == 0:
+                        click.echo('%s %s%%' % (query, int(current)))
 
                     if count >= limit:
                         break
@@ -425,7 +439,7 @@ def host(format, history, ip):
 
             click.echo(click.style('{:>7d} '.format(banner['port']), fg='cyan'), nl=False)
             click.echo('{} {}'.format(product, version), nl=False)
-            
+
             if history:
                 # Format the timestamp to only show the year-month-day
                 date = banner['timestamp'][:10]
@@ -651,7 +665,7 @@ def scan_submit(wait, filename, force, verbose, netblocks):
 
         click.echo('')
         click.echo('Starting Shodan scan at {} - {} scan credits left'.format(now, scan['credits_left']))
-        
+
         if verbose:
             click.echo('# Scan ID: {}'.format(scan['id']))
 
@@ -697,10 +711,10 @@ def scan_submit(wait, filename, force, verbose, netblocks):
                         # If we've grabbed data for more than 60 seconds it might just be a busy network and we should move on
                         if time.time() - scan_start >= 60:
                             scan = api.scan_status(scan['id'])
-                            
+
                             if verbose:
                                 click.echo('# Scan status: {}'.format(scan['status']))
-                                
+
                             if scan['status'] == 'DONE':
                                 done = True
                                 break
@@ -720,7 +734,7 @@ def scan_submit(wait, filename, force, verbose, netblocks):
                     scan = api.scan_status(scan['id'])
                     if scan['status'] == 'DONE':
                         done = True
-                    
+
                     if verbose:
                         click.echo('# Scan status: {}'.format(scan['status']))
                 except socket.timeout as e:
@@ -947,12 +961,12 @@ def stats(limit, facets, filename, query):
                 value = value.encode('ascii', errors='replace').decode('ascii')
             else:
                 value = str(value)
-            
+
             click.echo(click.style('{:28s}'.format(value), fg='cyan'), nl=False)
             click.echo(click.style('{:12,d}'.format(item['count']), fg='green'))
 
         click.echo('')
-        
+
     # Create the output file if requested
     fout = None
     if filename:
@@ -960,43 +974,43 @@ def stats(limit, facets, filename, query):
             filename += '.csv'
         fout = open(filename, 'w')
         writer = csv.writer(fout, dialect=csv.excel)
-        
+
         # Write the header
         writer.writerow(['Query', query])
-        
+
         # Add an empty line to separate rows
         writer.writerow([])
-        
+
         # Write the header that contains the facets
         row = []
         for facet in results['facets']:
             row.append(facet)
             row.append('')
         writer.writerow(row)
-        
+
         # Every facet has 2 columns (key, value)
         counter = 0
         has_items = True
         while has_items:
             row = ['' for i in range(len(results['facets']) * 2)]
-            
+
             pos = 0
             has_items = False
             for facet in results['facets']:
                 values = results['facets'][facet]
-                
+
                 # Add the values for the facet into the current row
                 if len(values) > counter:
                     has_items = True
                     row[pos] = values[counter]['value']
                     row[pos+1] = values[counter]['count']
-                
+
                 pos += 2
-            
+
             # Write out the row
             if has_items:
                 writer.writerow(row)
-            
+
             # Move to the next row of values
             counter += 1
 
@@ -1029,7 +1043,7 @@ def stream(color, fields, separator, limit, datadir, ports, quiet, timeout, stre
 
     if len(fields) == 0:
         raise click.ClickException('Please define at least one property to show')
-    
+
     # The user must choose "ports", "countries", "asn" or nothing - can't select multiple
     # filtered streams at once.
     stream_type = []
@@ -1041,30 +1055,30 @@ def stream(color, fields, separator, limit, datadir, ports, quiet, timeout, stre
         stream_type.append('asn')
     if alert:
         stream_type.append('alert')
-    
+
     if len(stream_type) > 1:
         raise click.ClickException('Please use --ports, --countries OR --asn. You cant subscribe to multiple filtered streams at once.')
 
     stream_args = None
-    
+
     # Turn the list of ports into integers
     if ports:
         try:
             stream_args = [int(item.strip()) for item in ports.split(',')]
         except:
             raise click.ClickException('Invalid list of ports')
-    
+
     if alert:
         alert = alert.strip()
         if alert.lower() != 'all':
             stream_args = alert
-    
+
     if asn:
         stream_args = asn.split(',')
-    
+
     if countries:
         stream_args = countries.split(',')
-    
+
     # Flatten the list of stream types
     # Possible values are:
     # - all
@@ -1085,7 +1099,7 @@ def stream(color, fields, separator, limit, datadir, ports, quiet, timeout, stre
             'countries': api.stream.countries(args, timeout=timeout),
             'ports': api.stream.ports(args, timeout=timeout),
         }.get(name, 'all')
-    
+
     stream = _create_stream(stream_type, stream_args, timeout=timeout)
 
     counter = 0
@@ -1152,7 +1166,7 @@ def stream(color, fields, separator, limit, datadir, ports, quiet, timeout, stre
         except:
             # For other errors lets just wait a bit and try to reconnect again
             time.sleep(1)
-            
+
             # Create a new stream object to subscribe to
             stream = _create_stream(stream_type, stream_args, timeout=timeout)
 
@@ -1166,14 +1180,14 @@ def honeyscore(ip):
 
     try:
         score = api.labs.honeyscore(ip)
-        
+
         if score == 1.0:
             click.echo(click.style('Honeypot detected', fg='red'))
         elif score > 0.5:
             click.echo(click.style('Probably a honeypot', fg='yellow'))
         else:
             click.echo(click.style('Not a honeypot', fg='green'))
-        
+
         click.echo('Score: {}'.format(score))
     except:
         click.ClickException('Unable to calculate honeyscore')
